@@ -1,0 +1,117 @@
+#!/usr/bin/env ruby
+require 'optparse'
+require 'uri'
+require 'net/http'
+require 'rubygems'
+require 'flickraw'
+require File.dirname(__FILE__) + '/lib/execution_queue'
+
+class VerboseDownloadLogger < ExecutionQueue::Observer
+  def initialize(execution_queue)
+    super
+    STDOUT.sync = true
+    @total = 0
+    @current = 0
+  end
+  
+  def next
+    @current += 1
+    print "\rDownloading photos #{@current} on #{@total}"
+  end
+  
+  def enqueue
+    @total += 1
+  end
+end
+
+def quit!(message='Error')
+  puts message
+  exit 1
+end
+
+def download(url)
+  uri = URI.parse(url)
+  Net::HTTP.get_response(uri) do |r|
+    File.open(File.basename(uri.path), "w") do |f| 
+      r.read_body {|fragment| f.write fragment }
+    end
+  end
+end
+
+def select_biggest_photo(photo, allowed_sizes = [])
+  sizes = flickr.photos.getSizes(:photo_id => photo.id).inject({}) {|h, size| h[size.label] = size.source;h}
+  best_size = allowed_sizes.find {|best_size| sizes.has_key?(best_size)}
+  sizes[best_size]
+end
+
+@options =  { :user => nil, :photoset => nil, :maxsize => 0}
+
+@parser = OptionParser.new do |opts|
+  opts.banner = "Find and download images from flickr"
+  opts.separator ""
+  opts.separator "Usage: flickrdl [options]"
+  opts.separator ""
+  opts.separator "Search options:"
+  opts.on("-u USERNAME", "--user USERNAME", "Username of the author") {|opt| @options[:user] = opt }
+  opts.on("-p TITLE", "--photoset TITLE", "Title of a photoset") {|opt| @options[:photoset] = opt }
+  opts.separator ""
+  opts.separator "Misc options:"
+  opts.on_tail("-q", "--quick [LEVEL]", "Download smaller pictures","  (Optional param from 1 to 6 from big to thumbnail)") {|opt| @options[:maxsize] = (opt||1).to_i}
+  opts.on_tail("-h", "--help", "Show this message") { puts @parser;exit 0; }
+end
+@parser.parse! ARGV
+
+def read_value(key)
+  ENV[key.to_s.upcase] || (File.open(File.join(ENV['HOME'], ".#{key}"), 'r+').read.chomp rescue nil)
+end
+
+#Configuration
+FlickRaw.api_key = read_value(:flickr_api_key) || quit!('A Flickr api key is mandatory')
+FlickRaw.shared_secret = read_value(:flickr_shared_secret) || quit!('A Flickr shared secret is mandatory')
+auth = read_value(:flickr_auth_token)
+
+if !(auth && (flickr.auth.checkToken(:auth_token => auth) rescue nil))
+  frob = flickr.auth.getFrob
+  auth_url = FlickRaw.auth_url :frob => frob, :perms => 'read'
+
+  puts "Open this url in your process to complete the authication process : #{auth_url}"
+  puts "Press Enter when you are finished."
+  STDIN.getc
+
+  begin
+    auth = flickr.auth.getToken :frob => frob
+    login = flickr.test.login
+    puts "You are now authenticated as #{login.username} with token #{auth.token}"
+    File.open(File.join(ENV['HOME'], ".flickr_auth_token"), 'w+') {|f| f.write(auth.token) }
+  rescue FlickRaw::FailedResponse => e
+    puts "Authentication failed : #{e.msg}"
+    exit 1
+  end
+end
+
+ALLOWED_SIZES = %w{Original Large Medium Medium Small Square Thumbnail}[@options[:maxsize]..-1]
+
+# Let's run it
+quit!('You must provide a username') unless @options[:user]
+
+user = begin
+  flickr.people.findByUsername :username => @options[:user]
+rescue FlickRaw::FailedResponse
+  quit!('Username does not exists')
+end
+
+unless @options[:photoset]
+  puts "Available user photosets:"
+  flickr.photosets.getList(:user_id => user.id).each {|photoset| puts " - #{photoset.title}"}
+else
+  photosets = flickr.photosets.getList(:user_id => user.id).find_all {|photoset| photoset.title =~ /#{@options[:photoset]}/i}
+  @execution_queue = ExecutionQueue.new(20)
+  VerboseDownloadLogger.new(@execution_queue)
+  photosets.each do |photoset|
+    photos = flickr.photosets.getPhotos(:photoset_id => photoset.id).photo.each do |photo|
+      @execution_queue.enqueue { download(select_biggest_photo(photo, ALLOWED_SIZES)) }
+    end
+  end
+  @execution_queue.wait_for_completion
+  print "\n"
+end
