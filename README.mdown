@@ -10,24 +10,26 @@ First you need to get an API KEY/Shared Secret from Flickr. Add them to env as F
 
 Then the script will help you to get a token from flickr to get an access to the api.
 
- - List the photosets of a user
+ * List the photosets of a user
       
-    $  ./flickrdl -u TechCrunchJapan 
-    Available user photosets:
-     - Startup Weekend_091219
-     - StartupMeeting_091214
-     - 第一回ウェブ学会
-     - ソフトウェアビジネスカンファレンス2009福岡
-     - TokyoCamp_091106
-     - TokyoCamp_TCjpOfficial_090828
+        $  ./flickrdl -u TechCrunchJapan
+        Available user photosets:
+         - Startup Weekend_091219
+         - StartupMeeting_091214
+         - 第一回ウェブ学会
+         - ソフトウェアビジネスカンファレンス2009福岡
+         - TokyoCamp_091106
+         - TokyoCamp_TCjpOfficial_090828
      
- - Download specifics photosets (regexp matching Startup Weekend_091219 and StartupMeeting_091214)
+ * Download specifics photosets (regexp matching Startup Weekend_091219 and StartupMeeting_091214)
  
-    $  ./flickrdl -u TechCrunchJapan -p Startup
-    Downloading photos 99 on 169
-    
-    $  ./flickrdl -u TechCrunchJapan -p '.*'
-    Downloading photos 24 on 361
+        $  ./flickrdl -u TechCrunchJapan -p Startup
+        Downloading photos 99 on 169
+
+ * Download all photosets from a user
+
+        $  ./flickrdl -u TechCrunchJapan -p '.*'
+        Downloading photos 24 on 361
     
 Photos are downloaded in current path, you can use -q option to get smaller photos and download increase download speed.
 
