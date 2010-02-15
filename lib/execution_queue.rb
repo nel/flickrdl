@@ -21,8 +21,8 @@ class ExecutionQueue
         loop do
           if task = execution_queue.next
             @active = true
-            task.call
-            execution_queue.send :notify, :done
+            task.call rescue nil
+            execution_queue.send :notify, :done #not thread safe, I should sync it too
           else
             @active = false
             sleep 0.01
